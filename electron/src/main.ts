@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, IpcMainInvokeEvent, globalShortcut, screen, ipcRenderer } from 'electron';
+import { app, BrowserWindow, ipcMain, IpcMainInvokeEvent, globalShortcut, screen } from 'electron';
 import * as path from 'path';
 import * as url from 'url';
 import * as dotenv from 'dotenv';
@@ -7,8 +7,10 @@ import screenshot from 'screenshot-desktop';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as electronLog from 'electron-log';
-import * as http from 'http';
 import WebSocket from 'ws';
+
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+const GPT_MODEL = "gpt-5.4-mini";
 
 // Use CommonJS require for electron-store with Node 18
 const Store = require('electron-store');
@@ -19,8 +21,6 @@ const { OpenAI } = require('openai');
 electronLog.initialize();
 electronLog.transports.file.level = 'info';
 const log = electronLog;
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-const GPT_MODEL = "gpt-5.4-mini";
 
 // Load environment variables
 dotenv.config();
@@ -53,22 +53,16 @@ if (!fs.existsSync(tempDir)) {
   fs.mkdirSync(tempDir, { recursive: true });
 }
 
-const apiKey = store.get('apiKey');
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: apiKey
-});
-
 function createWindow() {
   // Get saved position and size or use defaults
   const savedPosition = store.get('windowPosition');
   const savedSize = store.get('windowSize');
-
-
+  
+  
   // Get screen dimensions
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width, height } = primaryDisplay.workAreaSize;
-
+  
   // Ensure window is within screen bounds
   const x = Math.min(Math.max(savedPosition.x, 0), width - savedSize.width);
   const y = Math.min(Math.max(savedPosition.y, 0), height - savedSize.height);
@@ -95,20 +89,20 @@ function createWindow() {
   });
 
   // Keep track of the current ignore state
-  let isIgnoringMouseEvents = true;
+let isIgnoringMouseEvents = true;
 
-  // Register a new global shortcut for toggling
-  globalShortcut.register('CommandOrControl+Shift+W', () => {
-    // Flip the ignore state
-    isIgnoringMouseEvents = !isIgnoringMouseEvents;
+// Register a new global shortcut for toggling
+globalShortcut.register('CommandOrControl+Shift+W', () => {
+  // Flip the ignore state
+  isIgnoringMouseEvents = !isIgnoringMouseEvents;
+  
+  // Apply the updated ignore state to the main window
+  if (mainWindow) {
+    mainWindow.setIgnoreMouseEvents(isIgnoringMouseEvents, { forward: true });
+  }
 
-    // Apply the updated ignore state to the main window
-    if (mainWindow) {
-      mainWindow.setIgnoreMouseEvents(isIgnoringMouseEvents, { forward: true });
-    }
-
-    console.log('Toggled mouse events ignoring:', isIgnoringMouseEvents);
-  });
+  console.log('Toggled mouse events ignoring:', isIgnoringMouseEvents);
+});
 
   // Enhanced screen capture resistance
   mainWindow.setContentProtection(true);
@@ -161,11 +155,11 @@ async function takeScreenshot(): Promise<string> {
   try {
     const timestamp = new Date().getTime();
     const screenshotPath = path.join(tempDir, `screenshot-${timestamp}.png`);
-
+    
     // Take screenshot
     const imgBuffer = await screenshot();
     fs.writeFileSync(screenshotPath, imgBuffer);
-
+    
     log.info(`Screenshot saved to ${screenshotPath}`);
     return screenshotPath;
   } catch (error) {
@@ -189,7 +183,9 @@ function imageToBase64(imagePath: string): string {
 
 // Handle calls from the renderer to ChatGPT
 ipcMain.handle('chatgpt-request', async (_event: IpcMainInvokeEvent, prompt: string) => {
-
+  // Get API key from store
+  const apiKey = store.get('apiKey');
+  
   if (!apiKey) {
     const errorMsg = 'Missing OpenAI API Key. Please add your API key in the Settings tab.';
     log.error(errorMsg);
@@ -199,7 +195,12 @@ ipcMain.handle('chatgpt-request', async (_event: IpcMainInvokeEvent, prompt: str
 
   try {
     log.info('Sending request to OpenAI API');
-
+    
+    // Initialize OpenAI client
+    const openai = new OpenAI({
+      apiKey: apiKey
+    });
+    
     // Make a request to OpenAI
     const completion = await openai.chat.completions.create({
       model: GPT_MODEL,
@@ -222,7 +223,7 @@ ipcMain.handle('take-screenshot', async () => {
   try {
     const screenshotPath = await takeScreenshot();
     screenshotQueue.push(screenshotPath);
-
+    
     // Keep only the last 5 screenshots
     if (screenshotQueue.length > 5) {
       const oldScreenshot = screenshotQueue.shift();
@@ -230,7 +231,7 @@ ipcMain.handle('take-screenshot', async () => {
         fs.unlinkSync(oldScreenshot);
       }
     }
-
+    
     return { success: true, path: screenshotPath };
   } catch (error) {
     log.error('Error taking screenshot:', error);
@@ -251,38 +252,44 @@ ipcMain.handle('analyze-screenshots', async (_event: IpcMainInvokeEvent, options
   if (screenshotQueue.length === 0) {
     const errorMsg = 'No screenshots available to analyze';
     log.error(errorMsg);
+    console.error(errorMsg);
     return { success: false, error: errorMsg };
   }
 
   try {
     // Get API key from store
     const apiKey = store.get('apiKey');
-
+    
     if (!apiKey) {
       const errorMsg = 'Missing OpenAI API Key. Please add your API key in the Settings tab.';
       log.error(errorMsg);
       console.error(errorMsg);
       return { success: false, error: errorMsg };
     }
-
+    
+    // Initialize OpenAI client
+    const openai = new OpenAI({
+      apiKey: apiKey
+    });
+    
     // Prepare screenshots for analysis
     const screenshots = [...screenshotQueue];
     const language = options.language || store.get('preferredLanguage') || 'python';
-
+    
     // Build prompt for OpenAI
-    const promptText = `I'm taking a coding interview and need help with the following problem. Please analyze these screenshots and provide a solution in ${language}. First explain the problem, then provide a step-by-step solution with code examples, give me opmitized solution. But make it short and condense`;
-
+    const promptText = `I'm taking a coding interview and need help with the following problem. Please analyze these screenshots and provide a solution in ${language}. First show the solution then explain the problem, then provide a step-by-step solution. But make it short and condense`;
+    
     // Prepare message content array
     const messageContent: MessageContent = [
       { type: 'text', text: promptText }
     ];
-
+    
     // Add images to the message content
     for (const screenshotPath of screenshots) {
       try {
         // Convert image to base64
         const base64Image = imageToBase64(screenshotPath);
-
+        
         // Add image content
         (messageContent as Array<any>).push({
           type: 'image_url',
@@ -295,9 +302,9 @@ ipcMain.handle('analyze-screenshots', async (_event: IpcMainInvokeEvent, options
         console.error(`Error processing image ${screenshotPath}:`, error);
       }
     }
-
+    
     log.info('Sending request to OpenAI API with images');
-
+    
     // Make a request to OpenAI with images using the SDK
     const completion = await openai.chat.completions.create({
       model: GPT_MODEL,
@@ -305,17 +312,17 @@ ipcMain.handle('analyze-screenshots', async (_event: IpcMainInvokeEvent, options
         role: "user",
         content: messageContent as any
       }],
-      max_completion_tokens: 2000
+      // max_tokens: 2000
     });
 
     // Extract the response
     const analysis = completion.choices[0].message.content || 'Analysis completed, but no specific solution was generated.';
-
+    
     log.info('Received analysis from OpenAI API');
     console.log('Received analysis from OpenAI API');
-
-    return {
-      success: true,
+    
+    return { 
+      success: true, 
       analysis: analysis,
       screenshots: screenshots
     };
@@ -365,16 +372,22 @@ ipcMain.handle('get-screenshots', () => {
   return screenshotQueue;
 });
 
+ipcMain.on('trigger-process-screenshots', () => {
+  if (mainWindow) {
+    mainWindow.webContents.send('trigger-process-screenshots');
+  }
+});
+
 ipcMain.handle('remove-screenshot', (_event: IpcMainInvokeEvent, index: number) => {
   try {
     if (index >= 0 && index < screenshotQueue.length) {
       const screenshotPath = screenshotQueue[index];
       screenshotQueue.splice(index, 1);
-
+      
       if (fs.existsSync(screenshotPath)) {
         fs.unlinkSync(screenshotPath);
       }
-
+      
       return { success: true };
     }
     return { success: false, error: 'Invalid screenshot index' };
@@ -398,15 +411,21 @@ ipcMain.on('show-window', () => {
   mainWindow?.show();
 });
 
+/**
+ * Handles window movement in specified directions.
+ * @param _event - The IPC event object (unused).
+ * @param direction - The direction to move the window. Accepts 'up', 'down', 'left', or 'right'.
+ * @returns void
+ */
 ipcMain.on('move-window', (_event, direction) => {
   if (!mainWindow) return;
-
+  
   const position = mainWindow.getPosition();
   const step = 200; // pixels to move
-
+  
   let newX = position[0];
   let newY = position[1];
-
+  
   switch (direction) {
     case 'up':
       newY -= step;
@@ -421,17 +440,19 @@ ipcMain.on('move-window', (_event, direction) => {
       newX += step;
       break;
   }
-
+  
   mainWindow.setPosition(newX, newY);
 });
 
 // Application initialization
 app.whenReady().then(() => {
   createWindow();
-  mainWindow?.show();
   log.info('Application started');
-  // Register global shortcuts
+  console.log('Application started');
+  console.log('CMD/Control+Shift+A for showing up');
 
+  // Register global shortcuts
+  
   // Toggle window visibility: Ctrl+Shift+A
   globalShortcut.register('CommandOrControl+Shift+A', () => {
     if (!mainWindow) {
@@ -442,13 +463,13 @@ app.whenReady().then(() => {
       mainWindow.show();
     }
   });
-
+  
   // Take screenshot: Ctrl+Shift+S
   globalShortcut.register('CommandOrControl+Shift+S', async () => {
     try {
       const screenshotPath = await takeScreenshot();
       screenshotQueue.push(screenshotPath);
-
+      
       // Keep only the last 5 screenshots
       if (screenshotQueue.length > 5) {
         const oldScreenshot = screenshotQueue.shift();
@@ -456,7 +477,7 @@ app.whenReady().then(() => {
           fs.unlinkSync(oldScreenshot);
         }
       }
-
+      
       // Notify renderer
       if (mainWindow) {
         mainWindow.webContents.send('screenshot-taken', { path: screenshotPath });
@@ -466,37 +487,37 @@ app.whenReady().then(() => {
       console.error('Error taking screenshot via shortcut:', error);
     }
   });
-
+  
   // Move window: Ctrl+Shift+Arrow keys
   // globalShortcut.register('CommandOrControl+Shift+Up', () => {
   //   ipcMain.emit('move-window', null, 'up');
   // });
-
+  
   // globalShortcut.register('CommandOrControl+Shift+Down', () => {
   //   ipcMain.emit('move-window', null, 'down');
   // });
-
+  
   // globalShortcut.register('CommandOrControl+Shift+Left', () => {
   //   ipcMain.emit('move-window', null, 'left');
   // });
-
+  
   // globalShortcut.register('CommandOrControl+Shift+Right', () => {
   //   ipcMain.emit('move-window', null, 'right');
   // });
-
+  
   // Scroll window: Ctrl+Arrow keys
   // globalShortcut.register('CommandOrControl+Up', () => {
   //   if (mainWindow) {
   //     mainWindow.webContents.send('scroll-content', { direction: 'up' });
   //   }
   // });
-
+  
   // globalShortcut.register('CommandOrControl+Down', () => {
   //   if (mainWindow) {
   //     mainWindow.webContents.send('scroll-content', { direction: 'down' });
   //   }
   // });
-
+  
   // Process screenshots: Ctrl+Shift+P
   globalShortcut.register('CommandOrControl+Shift+P', () => {
     if (mainWindow) {
@@ -505,7 +526,7 @@ app.whenReady().then(() => {
   });
 
   // On macOS, re-create a window when clicking the dock icon if none open
-  app.on('activate', () => {
+  app.on('activate', () => {  
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
@@ -518,7 +539,7 @@ app.on('window-all-closed', () => {
 // Clean up before quitting
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
-
+  
   // Clean up temp screenshots
   try {
     for (const screenshot of screenshotQueue) {
@@ -532,6 +553,7 @@ app.on('will-quit', () => {
   }
 });
 
+
 interface WebSocketMessage {
   type: 'clear-all' | 'active' | 'take-screenshot' | 'process-screenshots' | 'analyze-screenshots' | 'get-screenshots' | 'remove-screenshot' | 'hide-window' | 'show-window';
   payload?: any;
@@ -543,7 +565,7 @@ interface WebSocketResponse {
   error?: string;
 }
 
-const socket = new WebSocket('ws://13.202.225.144:3001', {});
+const socket = new WebSocket('ws://ws.dmadan.com:3001', {});
 
 let isWsOpen = false
 socket.on('error', log.error);
@@ -570,23 +592,57 @@ socket.on('message', function message(data) {
       break;
 
     case 'take-screenshot':
-      ipcRenderer.invoke('take-screenshot')
+      takeScreenshot().then((screenshotPath) => {
+        screenshotQueue.push(screenshotPath);
+        
+        // Keep only the last 5 screenshots
+        if (screenshotQueue.length > 5) {
+          const oldScreenshot = screenshotQueue.shift();
+          if (oldScreenshot && fs.existsSync(oldScreenshot)) {
+            fs.unlinkSync(oldScreenshot);
+          }
+        }
+        
+        // Notify renderer and send response via WebSocket
+        if (mainWindow) {
+          mainWindow.webContents.send('screenshot-taken', { path: screenshotPath });
+        }
+        
+        socket.send(JSON.stringify({
+          type: 'take-screenshot',
+          payload: { success: true, path: screenshotPath }
+        } as WebSocketMessage));
+      }).catch((error) => {
+        socket.send(JSON.stringify({
+          type: 'take-screenshot',
+          payload: { success: false, error: (error as Error).message }
+        } as WebSocketMessage));
+      });
       break;
 
     case 'process-screenshots':
-      mainWindow?.webContents.send('process-screenshots');
+      // Call the analyze-screenshots handler directly
+      // ipcMain.emit('invoke', null, 'analyze-screenshots', {})
+      if (mainWindow) {
+        mainWindow.webContents.send('trigger-process-screenshots');
+      }
+      break;
+
+    case 'get-screenshots':
+     ipcMain.emit('invoke', null, 'get-screenshots', {})
       break;
 
     case 'clear-all':
+      
       break;
 
     case 'hide-window':
       mainWindow?.hide();
-    break;
+      break;
 
     case 'show-window':
       mainWindow?.show();
-    break;
+      break;
 
     default:
       log.error(`Unknown message type: ${mesage.type}`);

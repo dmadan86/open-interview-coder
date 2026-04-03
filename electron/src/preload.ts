@@ -1,7 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import * as electronLog from 'electron-log';
 
-const log = electronLog;
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -12,8 +10,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   closeWindow: () => ipcRenderer.send('close-window'),
   hideWindow: () => ipcRenderer.send('hide-window'),
   showWindow: () => ipcRenderer.send('show-window'),
-  // moveWindow: (direction: 'up' | 'down' | 'left' | 'right') => 
-  //   ipcRenderer.send('move-window', direction),
+  moveWindow: (direction: 'up' | 'down' | 'left' | 'right') => 
+    ipcRenderer.send('move-window', direction),
   
   // Screenshot functionality
   takeScreenshot: () => ipcRenderer.invoke('take-screenshot'),
@@ -21,11 +19,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('analyze-screenshots', options),
   
   // API Key and Preferences management
-  // saveApiKey: (apiKey: string) => ipcRenderer.invoke('save-api-key', apiKey),
-  // getApiKey: () => ipcRenderer.invoke('get-api-key'),
-  // savePreferences: (preferences: { preferredLanguage: string }) => 
-  //   ipcRenderer.invoke('save-preferences', preferences),
-  // getPreferences: () => ipcRenderer.invoke('get-preferences'),
+  saveApiKey: (apiKey: string) => ipcRenderer.invoke('save-api-key', apiKey),
+  getApiKey: () => ipcRenderer.invoke('get-api-key'),
+  savePreferences: (preferences: { preferredLanguage: string }) => 
+    ipcRenderer.invoke('save-preferences', preferences),
+  getPreferences: () => ipcRenderer.invoke('get-preferences'),
   
   // Screenshot management
   getScreenshots: () => ipcRenderer.invoke('get-screenshots'),
@@ -42,11 +40,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   
   onProcessScreenshots: (callback: () => void) => {
-    ipcRenderer.on('process-screenshots', () => callback());
+    ipcRenderer.on('trigger-process-screenshots', () => callback());
     
     // Return a function to remove the listener
     return () => {
-      ipcRenderer.removeAllListeners('process-screenshots');
+      ipcRenderer.removeAllListeners('trigger-process-screenshots');
     };
   }
 });

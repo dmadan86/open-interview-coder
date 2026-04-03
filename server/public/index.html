@@ -177,6 +177,8 @@
             <button class="btn-clear" id="clearBtn">🗑️ Clear</button>
             <button class="btn-hide" id="hideBtn">👁️ Hide</button>
             <button class="btn-show" id="showBtn">👁️ Show</button>
+            <button class="btn-show" id="up">👁️ scroll up</button>
+            <button class="btn-show" id="down">👁️ scroll down</button>
         </div>
 
         <div class="log" id="log"></div>
@@ -198,7 +200,9 @@
             process: document.getElementById('processBtn'),
             clear: document.getElementById('clearBtn'),
             hide: document.getElementById('hideBtn'),
-            show: document.getElementById('showBtn')
+            show: document.getElementById('showBtn'),
+            up: document.getElementById('up'),
+            down: document.getElementById('down'),
         };
 
         // Initialize WebSocket connection
@@ -285,6 +289,8 @@
         buttons.clear.addEventListener('click', () => sendMessage('clear'));
         buttons.hide.addEventListener('click', () => sendMessage('hide'));
         buttons.show.addEventListener('click', () => sendMessage('show'));
+        buttons.up.addEventListener('click', () => sendMessage('up'));
+        buttons.down.addEventListener('click', () => sendMessage('down'));
 
         // Connect on page load
         connectWebSocket();

@@ -54,6 +54,12 @@ wss.on('connection', (ws: WebSocket) => {
         case 'show':
           handleShow(ws);
           break;
+        case 'up':
+          handleUp(ws);
+          break;
+        case 'down':
+          handleDown(ws);
+          break;
         default:
           ws.send(JSON.stringify({
             type: 'error',
@@ -122,6 +128,22 @@ function handleShow(ws: WebSocket) {
   broadcast({
     type: 'show-window',
     action: 'show',
+    message: 'Window shown'
+  });
+}
+
+function handleUp(ws: WebSocket) {
+  broadcast({
+    type: 'up',
+    action: 'up',
+    message: 'Window shown'
+  });
+}
+
+function handleDown(ws: WebSocket) {
+  broadcast({
+    type: 'down',
+    action: 'down',
     message: 'Window shown'
   });
 }
