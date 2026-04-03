@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Control Panel</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .status {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 10px;
+            border-radius: 5px;
+            font-weight: 500;
+        }
+
+        .status.connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .status.disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .buttons-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 15px 20px;
+            font-size: 16px;
+            font-weight: 600;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: white;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        button:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-screenshot {
+            background-color: #007bff;
+            grid-column: 1 / -1;
+        }
+
+        .btn-screenshot:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+
+        .btn-process {
+            background-color: #28a745;
+        }
+
+        .btn-process:hover:not(:disabled) {
+            background-color: #1e7e34;
+        }
+
+        .btn-clear {
+            background-color: #dc3545;
+        }
+
+        .btn-clear:hover:not(:disabled) {
+            background-color: #a71d2a;
+        }
+
+        .btn-hide {
+            background-color: #ffc107;
+            color: #333;
+        }
+
+        .btn-hide:hover:not(:disabled) {
+            background-color: #e0a800;
+        }
+
+        .btn-show {
+            background-color: #17a2b8;
+        }
+
+        .btn-show:hover:not(:disabled) {
+            background-color: #117a8b;
+        }
+
+        .log {
+            background-color: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            height: 200px;
+            overflow-y: auto;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+            color: #333;
+        }
+
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid #667eea;
+            padding-left: 10px;
+        }
+
+        .log-entry.success {
+            border-left-color: #28a745;
+            color: #28a745;
+        }
+
+        .log-entry.error {
+            border-left-color: #dc3545;
+            color: #dc3545;
+        }
+
+        .log-entry.info {
+            border-left-color: #17a2b8;
+            color: #17a2b8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Control Panel</h1>
+        <div class="status disconnected" id="status">Disconnected</div>
+
+        <div class="buttons-grid">
+            <button class="btn-screenshot" id="screenshotBtn">📸 Screenshot</button>
+            <button class="btn-process" id="processBtn">⚙️ Process</button>
+            <button class="btn-clear" id="clearBtn">🗑️ Clear</button>
+            <button class="btn-hide" id="hideBtn">👁️ Hide</button>
+            <button class="btn-show" id="showBtn">👁️ Show</button>
+        </div>
+
+        <div class="log" id="log"></div>
+    </div>
+
+    <script>
+        const WS_URL = 'ws://localhost:3000'; // Change this to your server URL
+        let ws = null;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 5;
+        const reconnectDelay = 3000;
+
+        const statusEl = document.getElementById('status');
+        const logEl = document.getElementById('log');
+
+        // Button references
+        const buttons = {
+            screenshot: document.getElementById('screenshotBtn'),
+            process: document.getElementById('processBtn'),
+            clear: document.getElementById('clearBtn'),
+            hide: document.getElementById('hideBtn'),
+            show: document.getElementById('showBtn')
+        };
+
+        // Initialize WebSocket connection
+        function connectWebSocket() {
+            try {
+                ws = new WebSocket(WS_URL);
+
+                ws.onopen = () => {
+                    log('Connected to server', 'success');
+                    updateStatus(true);
+                    reconnectAttempts = 0;
+                    enableButtons(true);
+                };
+
+                ws.onmessage = (event) => {
+                    log(`Server: ${event.data}`, 'info');
+                };
+
+                ws.onerror = (error) => {
+                    log(`WebSocket error: ${error}`, 'error');
+                    updateStatus(false);
+                    enableButtons(false);
+                };
+
+                ws.onclose = () => {
+                    log('Disconnected from server', 'error');
+                    updateStatus(false);
+                    enableButtons(false);
+                    attemptReconnect();
+                };
+            } catch (error) {
+                log(`Connection error: ${error.message}`, 'error');
+                updateStatus(false);
+                enableButtons(false);
+            }
+        }
+
+        // Attempt to reconnect with backoff
+        function attemptReconnect() {
+            if (reconnectAttempts < maxReconnectAttempts) {
+                reconnectAttempts++;
+                log(`Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})`, 'info');
+                setTimeout(connectWebSocket, reconnectDelay);
+            } else {
+                log('Max reconnection attempts reached', 'error');
+            }
+        }
+
+        // Send message to server
+        function sendMessage(action) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ action }));
+                log(`Sent: ${action}`, 'success');
+            } else {
+                log(`Cannot send ${action} - not connected`, 'error');
+            }
+        }
+
+        // Update status display
+        function updateStatus(connected) {
+            statusEl.textContent = connected ? 'Connected' : 'Disconnected';
+            statusEl.className = `status ${connected ? 'connected' : 'disconnected'}`;
+        }
+
+        // Enable/disable buttons
+        function enableButtons(enabled) {
+            Object.values(buttons).forEach(btn => {
+                btn.disabled = !enabled;
+            });
+        }
+
+        // Log messages
+        function log(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        // Attach button listeners
+        buttons.screenshot.addEventListener('click', () => sendMessage('screenshot'));
+        buttons.process.addEventListener('click', () => sendMessage('process'));
+        buttons.clear.addEventListener('click', () => sendMessage('clear'));
+        buttons.hide.addEventListener('click', () => sendMessage('hide'));
+        buttons.show.addEventListener('click', () => sendMessage('show'));
+
+        // Connect on page load
+        connectWebSocket();
+    </script>
+</body>
+</html>

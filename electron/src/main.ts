@@ -533,7 +533,7 @@ app.on('will-quit', () => {
 });
 
 interface WebSocketMessage {
-  type: 'active' | 'take-screenshot' | 'process-screenshots' | 'analyze-screenshots' | 'get-screenshots' | 'remove-screenshot' | 'hide-window' | 'show-window';
+  type: 'clear-all' | 'active' | 'take-screenshot' | 'process-screenshots' | 'analyze-screenshots' | 'get-screenshots' | 'remove-screenshot' | 'hide-window' | 'show-window';
   payload?: any;
 }
 
@@ -543,7 +543,7 @@ interface WebSocketResponse {
   error?: string;
 }
 
-const socket = new WebSocket('wss://echo.websocket.org', {});
+const socket = new WebSocket('ws://localhost:3000', {});
 
 let isWsOpen = false
 socket.on('error', log.error);
@@ -568,13 +568,16 @@ socket.on('message', function message(data) {
     case 'active':
       isWsOpen = true;
       break;
+
     case 'take-screenshot':
+      ipcRenderer.invoke('take-screenshot')
       break;
 
     case 'process-screenshots':
+      mainWindow?.webContents.send('process-screenshots');
       break;
 
-    case 'get-screenshots':
+    case 'clear-all':
       break;
 
     case 'hide-window':
@@ -584,22 +587,8 @@ socket.on('message', function message(data) {
     case 'show-window':
       mainWindow?.show();
     break;
+
+    default:
+      log.error(`Unknown message type: ${mesage.type}`);
   }
 });
-
-let open = false;
-setInterval(() => {
-  if(!isWsOpen) return;
-  if(open) {
-    const message: WebSocketMessage = {
-      type: 'show-window'
-    };
-    socket.send(JSON.stringify(message));
-  } else {
-    const message: WebSocketMessage = {
-      type: 'hide-window'
-    };
-    socket.send(JSON.stringify(message));
-  }
-  open = !open
-}, 1000);
