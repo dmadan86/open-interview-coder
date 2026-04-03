@@ -543,7 +543,7 @@ interface WebSocketResponse {
   error?: string;
 }
 
-const socket = new WebSocket('ws://localhost:3000', {});
+const socket = new WebSocket('ws://13.202.225.144:3001', {});
 
 let isWsOpen = false
 socket.on('error', log.error);
