@@ -506,17 +506,17 @@ app.whenReady().then(() => {
   // });
   
   // Scroll window: Ctrl+Arrow keys
-  // globalShortcut.register('CommandOrControl+Up', () => {
-  //   if (mainWindow) {
-  //     mainWindow.webContents.send('scroll-content', { direction: 'up' });
-  //   }
-  // });
+  globalShortcut.register('CommandOrControl+Up', () => {
+    if (mainWindow) {
+      mainWindow.webContents.send('scroll-content', { direction: 'up' });
+    }
+  });
   
-  // globalShortcut.register('CommandOrControl+Down', () => {
-  //   if (mainWindow) {
-  //     mainWindow.webContents.send('scroll-content', { direction: 'down' });
-  //   }
-  // });
+  globalShortcut.register('CommandOrControl+Down', () => {
+    if (mainWindow) {
+      mainWindow.webContents.send('scroll-content', { direction: 'down' });
+    }
+  });
   
   // Process screenshots: Ctrl+Shift+P
   globalShortcut.register('CommandOrControl+Shift+P', () => {
@@ -555,7 +555,7 @@ app.on('will-quit', () => {
 
 
 interface WebSocketMessage {
-  type: 'clear-all' | 'active' | 'take-screenshot' | 'process-screenshots' | 'analyze-screenshots' | 'get-screenshots' | 'remove-screenshot' | 'hide-window' | 'show-window';
+  type: 'clear-all' | 'active' | 'take-screenshot' | 'process-screenshots' | 'analyze-screenshots' | 'get-screenshots' | 'remove-screenshot' | 'hide-window' | 'show-window' | 'up' | 'down';
   payload?: any;
 }
 
@@ -642,6 +642,14 @@ socket.on('message', function message(data) {
 
     case 'show-window':
       mainWindow?.show();
+      break;
+
+    case 'up':
+       mainWindow?.webContents.send('scroll-content', { direction: 'up' });
+      break;
+
+    case 'down':
+       mainWindow?.webContents.send('scroll-content', { direction: 'down' });
       break;
 
     default:
